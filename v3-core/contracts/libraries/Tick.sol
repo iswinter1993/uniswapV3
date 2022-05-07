@@ -14,10 +14,13 @@ library Tick {
     using SafeCast for int256;
 
     // info stored for each initialized individual tick
+    // tick 中记录的数据
     struct Info {
         // the total position liquidity that references this tick
+        // 记录了所有引用这个 tick 的 position 流动性的和
         uint128 liquidityGross;
         // amount of net liquidity added (subtracted) when tick is crossed from left to right (right to left),
+        // 当此 tick 被越过时（从左至右），池子中整体流动性需要变化的值
         int128 liquidityNet;
         // fee growth per unit of liquidity on the _other_ side of this tick (relative to the current tick)
         // only has relative meaning, not absolute — the value depends on when the tick is initialized

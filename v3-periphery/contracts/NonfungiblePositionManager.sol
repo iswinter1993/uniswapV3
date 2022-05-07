@@ -31,22 +31,34 @@ contract NonfungiblePositionManager is
     SelfPermit
 {
     // details about the uniswap position
+    //v3 会保存所有用户的流动性，代码内称作 Position
     struct Position {
         // the nonce for permits
-        uint96 nonce;
+        //随机数
+        uint96 nonce;   
+
         // the address that is approved for spending this token
+        // 被授权花费此token的地址
         address operator;
+
         // the ID of the pool with which this token is connected
+        //与此token连接的池子的ID
         uint80 poolId;
+
         // the tick range of the position
+        // position 的刻度 tick 范围
         int24 tickLower;
         int24 tickUpper;
+
         // the liquidity of the position
+        // position 的流动性
         uint128 liquidity;
         // the fee growth of the aggregate position as of the last action on the individual position
+        //个人最新的position费用增长
         uint256 feeGrowthInside0LastX128;
         uint256 feeGrowthInside1LastX128;
         // how many uncollected tokens are owed to the position, as of the last computation
+        //截至上次計算，該頭寸欠了多少未收集的代幣(可使用闪电贷？？)
         uint128 tokensOwed0;
         uint128 tokensOwed1;
     }
@@ -77,14 +89,15 @@ contract NonfungiblePositionManager is
     }
 
     /// @inheritdoc INonfungiblePositionManager
+    //获取token 的 position 
     function positions(uint256 tokenId)
         external
         view
         override
         returns (
             uint96 nonce,
-            address operator,
-            address token0,
+            address operator, 
+            address token0, 
             address token1,
             uint24 fee,
             int24 tickLower,
@@ -116,6 +129,7 @@ contract NonfungiblePositionManager is
     }
 
     /// @dev Caches a pool key
+    //储存poolId
     function cachePoolKey(address pool, PoolAddress.PoolKey memory poolKey) private returns (uint80 poolId) {
         poolId = _poolIds[pool];
         if (poolId == 0) {
@@ -125,6 +139,7 @@ contract NonfungiblePositionManager is
     }
 
     /// @inheritdoc INonfungiblePositionManager
+    
     function mint(MintParams calldata params)
         external
         payable

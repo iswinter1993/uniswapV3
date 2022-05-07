@@ -32,8 +32,8 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
     using LowGasSafeMath for int256;
     using SafeCast for uint256;
     using SafeCast for int256;
-    using Tick for mapping(int24 => Tick.Info);
-    using TickBitmap for mapping(int16 => uint256);
+    using Tick for mapping(int24 => Tick.Info);// tick 元数据管理的库
+    using TickBitmap for mapping(int16 => uint256);// tick 位图槽位的库
     using Position for mapping(bytes32 => Position.Info);
     using Position for Position.Info;
     using Oracle for Oracle.Observation[65535];
@@ -90,9 +90,15 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
     uint128 public override liquidity;
 
     /// @inheritdoc IUniswapV3PoolState
+    // 记录了一个 tick 包含的元数据，这里只会包含所有 Position 的 lower/upper ticks
     mapping(int24 => Tick.Info) public override ticks;
+
     /// @inheritdoc IUniswapV3PoolState
+    // tick 位图，因为这个位图比较长（一共有 887272x2 个位），大部分的位不需要初始化
+    // 因此分成两级来管理，每 256 位为一个单位，一个单位称为一个 word
+    // map 中的键是 word 的索引
     mapping(int16 => uint256) public override tickBitmap;
+    
     /// @inheritdoc IUniswapV3PoolState
     mapping(bytes32 => Position.Info) public override positions;
     /// @inheritdoc IUniswapV3PoolState
@@ -295,6 +301,7 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         int24 tickLower;
         int24 tickUpper;
         // any change in liquidity
+        //流動性的任何變化
         int128 liquidityDelta;
     }
 
@@ -303,6 +310,7 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
     /// @return position a storage pointer referencing the position with the given owner and tick range
     /// @return amount0 the amount of token0 owed to the pool, negative if the pool should pay the recipient
     /// @return amount1 the amount of token1 owed to the pool, negative if the pool should pay the recipient
+    //
     function _modifyPosition(ModifyPositionParams memory params)
         private
         noDelegateCall
@@ -315,7 +323,7 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         checkTicks(params.tickLower, params.tickUpper);
 
         Slot0 memory _slot0 = slot0; // SLOAD for gas optimization
-
+        //创建或修改一个用户的position
         position = _updatePosition(
             params.owner,
             params.tickLower,
@@ -325,19 +333,25 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         );
 
         if (params.liquidityDelta != 0) {
+            //三种情况
             if (_slot0.tick < params.tickLower) {
                 // current tick is below the passed range; liquidity can only become in range by crossing from left to
                 // right, when we'll need _more_ token0 (it's becoming more valuable) so user must provide it
+                //1. 当前的 tick < tickLower ，在设置的范围左边，我们需要更多的token0
+                
                 amount0 = SqrtPriceMath.getAmount0Delta(
+                    
                     TickMath.getSqrtRatioAtTick(params.tickLower),
                     TickMath.getSqrtRatioAtTick(params.tickUpper),
                     params.liquidityDelta
                 );
             } else if (_slot0.tick < params.tickUpper) {
                 // current tick is inside the passed range
+                // 2. 当前 tickLower < tick < tickUpper 在设置的范围内
                 uint128 liquidityBefore = liquidity; // SLOAD for gas optimization
 
                 // write an oracle entry
+                //編寫預言機條目
                 (slot0.observationIndex, slot0.observationCardinality) = observations.write(
                     _slot0.observationIndex,
                     _blockTimestamp(),
@@ -362,6 +376,7 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
             } else {
                 // current tick is above the passed range; liquidity can only become in range by crossing from right to
                 // left, when we'll need _more_ token1 (it's becoming more valuable) so user must provide it
+                //3. 当前 tick > tickUpper, 在设置范围的右边，我们需要更多的token1
                 amount1 = SqrtPriceMath.getAmount1Delta(
                     TickMath.getSqrtRatioAtTick(params.tickLower),
                     TickMath.getSqrtRatioAtTick(params.tickUpper),
@@ -376,23 +391,29 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
     /// @param tickLower the lower tick of the position's tick range
     /// @param tickUpper the upper tick of the position's tick range
     /// @param tick the current tick, passed to avoid sloads
+    //更新或创建一个用户的Position
     function _updatePosition(
-        address owner,
+        address owner,//owner 实际上是 NonfungiblePositionManager 合约的地址
         int24 tickLower,
         int24 tickUpper,
         int128 liquidityDelta,
         int24 tick
     ) private returns (Position.Info storage position) {
+         // 获取用户的 Postion
         position = positions.get(owner, tickLower, tickUpper);
 
         uint256 _feeGrowthGlobal0X128 = feeGrowthGlobal0X128; // SLOAD for gas optimization
         uint256 _feeGrowthGlobal1X128 = feeGrowthGlobal1X128; // SLOAD for gas optimization
 
         // if we need to update the ticks, do it
+        // 根据传入的参数修改 Position 对应的 lower/upper tick 中
+        // 的数据，这里可以是增加流动性，也可以是移出流动性
         bool flippedLower;
         bool flippedUpper;
         if (liquidityDelta != 0) {
             uint32 time = _blockTimestamp();
+
+
             (int56 tickCumulative, uint160 secondsPerLiquidityCumulativeX128) =
                 observations.observeSingle(
                     time,
@@ -402,7 +423,11 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
                     liquidity,
                     slot0.observationCardinality
                 );
-
+            // 更新 lower tikc 和 upper tick
+            // flippedLower,flippedUpper 变量表示是此 tick 的引用状态是否发生变化，即
+            // 被引用 -> 未被引用 或
+            // 未被引用 -> 被引用
+            // 后续需要根据这个变量的值来更新 tick 位图
             flippedLower = ticks.update(
                 tickLower,
                 tick,
@@ -427,7 +452,8 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
                 true,
                 maxLiquidityPerTick
             );
-
+            // 如果一个 tick 第一次被引用，或者移除了所有引用
+            // 那么更新 tick 位图
             if (flippedLower) {
                 tickBitmap.flipTick(tickLower, tickSpacing);
             }
@@ -438,9 +464,10 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
 
         (uint256 feeGrowthInside0X128, uint256 feeGrowthInside1X128) =
             ticks.getFeeGrowthInside(tickLower, tickUpper, tick, _feeGrowthGlobal0X128, _feeGrowthGlobal1X128);
-
+        // 更新 position 中的数据
         position.update(liquidityDelta, feeGrowthInside0X128, feeGrowthInside1X128);
-
+        // 如果移除了对 tick 的引用，那么清除之前记录的元数据
+        // 这只会发生在移除流动性的操作中
         // clear any tick data that is no longer needed
         if (liquidityDelta < 0) {
             if (flippedLower) {
