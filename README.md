@@ -30,3 +30,13 @@ Postion 是以 owner, lower tick, uppper tick 作为键来存储的，注意这�
 # tick 管理
 
 我们再来看 tick 相关的管理，在 UniswapV3Pool 合约中有两个状态变量记录了 tick 相关的信息ticks、tickBitmap。（查看合约UniswapV3Pool，库 Tick ）
+
+# 完成流动性添加
+
+_modifyPosition 调用完成后，会返回 x token, 和 y token 的数量。再来看 UniswapV3Pool.mint 的代码,这个函数关键的步骤就是通过回调函数，让调用方发送指定数量的 x token 和 y token 至合约中。
+
+我们再来看 NonfungiblePositionManager.mint 的代码,可以看到这个函数主要是将用户的 Position 保存起来，并给用户铸造 NFT token，代表其所持有的流动性。至此提供流动性的步骤就完成了。
+
+# 流动性的移除
+
+移除流动性就是上述操作的逆操作，看 UniswapV3Pool.burn 代码，移除流动性时，还是使用之前的公式计算出移出的 token 数，但是并不会直接将移出的 token 数发送给用户，而是记录在了 position 的 tokensOwed0 和 tokensOwed1 上。这样做应该是为了遵循实践：Favor pull over push for external calls. 再看NonfungiblePositionManager.burn代码。

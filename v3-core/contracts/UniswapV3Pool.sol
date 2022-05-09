@@ -98,7 +98,7 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
     // 因此分成两级来管理，每 256 位为一个单位，一个单位称为一个 word
     // map 中的键是 word 的索引
     mapping(int16 => uint256) public override tickBitmap;
-    
+
     /// @inheritdoc IUniswapV3PoolState
     mapping(bytes32 => Position.Info) public override positions;
     /// @inheritdoc IUniswapV3PoolState
@@ -504,9 +504,12 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
 
         uint256 balance0Before;
         uint256 balance1Before;
+         // 获取当前池中的 x token, y token 余额
         if (amount0 > 0) balance0Before = balance0();
         if (amount1 > 0) balance1Before = balance1();
+        // 将需要的 x token 和 y token 数量传给回调函数，这里预期回调函数会将指定数量的 token 发送到合约中
         IUniswapV3MintCallback(msg.sender).uniswapV3MintCallback(amount0, amount1, data);
+        // 回调完成后，检查发送至合约的 token 是否复合预期，如果不满足检查则回滚交易
         if (amount0 > 0) require(balance0Before.add(amount0) <= balance0(), 'M0');
         if (amount1 > 0) require(balance1Before.add(amount1) <= balance1(), 'M1');
 
@@ -546,6 +549,7 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         int24 tickUpper,
         uint128 amount
     ) external override lock returns (uint256 amount0, uint256 amount1) {
+         // 先计算出需要移除的 token 数
         (Position.Info storage position, int256 amount0Int, int256 amount1Int) =
             _modifyPosition(
                 ModifyPositionParams({
@@ -558,7 +562,7 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
 
         amount0 = uint256(-amount0Int);
         amount1 = uint256(-amount1Int);
-
+         // 注意这里，移除流动性后，将移出的 token 数记录到了 position.tokensOwed 上
         if (amount0 > 0 || amount1 > 0) {
             (position.tokensOwed0, position.tokensOwed1) = (
                 position.tokensOwed0 + uint128(amount0),

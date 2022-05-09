@@ -139,7 +139,7 @@ contract NonfungiblePositionManager is
     }
 
     /// @inheritdoc INonfungiblePositionManager
-    
+    //可以看到这个函数主要是将用户的 Position 保存起来，并给用户铸造 NFT token，代表其所持有的流动性。
     function mint(MintParams calldata params)
         external
         payable
@@ -153,6 +153,7 @@ contract NonfungiblePositionManager is
         )
     {
         IUniswapV3Pool pool;
+         // 这里是添加流动性，并完成 x token 和 y token 的发送
         (liquidity, amount0, amount1, pool) = addLiquidity(
             AddLiquidityParams({
                 token0: params.token0,
@@ -167,7 +168,7 @@ contract NonfungiblePositionManager is
                 amount1Min: params.amount1Min
             })
         );
-
+         // 铸造 ERC721 token (nft) 给用户，用来代表用户所持有的流动性
         _mint(params.recipient, (tokenId = _nextId++));
 
         bytes32 positionKey = PositionKey.compute(address(this), params.tickLower, params.tickUpper);
@@ -179,7 +180,7 @@ contract NonfungiblePositionManager is
                 address(pool),
                 PoolAddress.PoolKey({token0: params.token0, token1: params.token1, fee: params.fee})
             );
-
+        // 用 ERC721 的 token ID 作为键，将用户提供流动性的元信息保存起来
         _positions[tokenId] = Position({
             nonce: 0,
             operator: address(0),
@@ -269,6 +270,7 @@ contract NonfungiblePositionManager is
     }
 
     /// @inheritdoc INonfungiblePositionManager
+    //减少流动性
     function decreaseLiquidity(DecreaseLiquidityParams calldata params)
         external
         payable
@@ -284,6 +286,7 @@ contract NonfungiblePositionManager is
         require(positionLiquidity >= params.liquidity);
 
         PoolAddress.PoolKey memory poolKey = _poolIdToPoolKey[position.poolId];
+        //不通过UniswapV3Factory合约，直接计算pool地址
         IUniswapV3Pool pool = IUniswapV3Pool(PoolAddress.computeAddress(factory, poolKey));
         (amount0, amount1) = pool.burn(position.tickLower, position.tickUpper, params.liquidity);
 
@@ -389,10 +392,12 @@ contract NonfungiblePositionManager is
     }
 
     /// @inheritdoc INonfungiblePositionManager
+    //移除流动性
     function burn(uint256 tokenId) external payable override isAuthorizedForToken(tokenId) {
         Position storage position = _positions[tokenId];
         require(position.liquidity == 0 && position.tokensOwed0 == 0 && position.tokensOwed1 == 0, 'Not cleared');
         delete _positions[tokenId];
+        //通过 tokenId 销毁他的 ERC721 token （nft）
         _burn(tokenId);
     }
 
